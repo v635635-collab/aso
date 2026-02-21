@@ -1,0 +1,18 @@
+export const CRON_SCHEDULES: Record<string, { schedule: string; description: string }> = {
+  'position-monitor': { schedule: '0 */6 * * *', description: 'Check positions every 6h' },
+  'pessimization-detector': { schedule: '30 */6 * * *', description: 'Detect pessimizations' },
+  'keyword-metrics-refresh': { schedule: '0 2 * * *', description: 'Refresh keyword metrics' },
+  'app-sync': { schedule: '0 3 * * *', description: 'Sync app data from store' },
+  'niche-recalculate': { schedule: '0 4 * * 1', description: 'Recalculate niche metrics' },
+  'learning-update': { schedule: '0 5 * * 1', description: 'Update learning records' },
+  'asomobile-poller': { schedule: '*/5 * * * *', description: 'Poll ASOMobile tasks' },
+  'research-processor': { schedule: '*/10 * * * *', description: 'Process research sessions' },
+  'daily-digest': { schedule: '0 8 * * *', description: 'Generate daily AI digest' },
+  'campaign-daily-executor': { schedule: '0 6 * * *', description: 'Execute daily push plans' },
+  'auto-tagger': { schedule: '0 1 * * *', description: 'Auto-tag entities' },
+  'db-backup': { schedule: '0 0 * * *', description: 'Database backup' },
+  'notification-dispatcher': { schedule: '*/1 * * * *', description: 'Dispatch notifications' },
+  'data-archiver': { schedule: '0 4 * * *', description: 'Archive old data' },
+  'trends-collector': { schedule: '0 7 * * *', description: 'Collect Google Trends' },
+  'trends-analyzer': { schedule: '0 9 * * 1', description: 'Analyze trends with AI' },
+};

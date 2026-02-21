@@ -1,0 +1,1345 @@
+// prisma/schema.prisma
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextSearch", "postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pgVector(map: "vector"), pg_trgm]
+}
+
+// ============================================================
+// IDENTITY & ACCESS
+// ============================================================
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String?
+  passwordHash  String
+  role          UserRole @default(OPERATOR)
+  avatarUrl     String?
+  settings      Json     @default("{}")
+  lastLoginAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  chatSessions  AIChatSession[]
+  aiActions     AIAction[]
+  auditLogs     AuditLog[]
+  notifications Notification[]
+
+  @@map("user")
+  @@index([email])
+}
+
+enum UserRole {
+  ADMIN
+  OPERATOR
+  VIEWER
+}
+
+// ============================================================
+// APPLE DEVELOPER ACCOUNTS
+// ============================================================
+
+model AppleAccount {
+  id              String             @id @default(cuid())
+  email           String             @unique
+  teamName        String?
+  teamId          String?
+  status          AppleAccountStatus @default(ACTIVE)
+  maxApps         Int                @default(30)
+  expiresAt       DateTime?
+  credentials     Json?
+  tags            String[]           @default([])
+  metadata        Json               @default("{}")
+  notes           String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  apps            App[]
+
+  @@map("apple_account")
+  @@index([status])
+  @@index([tags], type: Gin)
+}
+
+enum AppleAccountStatus {
+  ACTIVE
+  SUSPENDED
+  EXPIRED
+  BANNED
+}
+
+// ============================================================
+// APPLICATIONS
+// ============================================================
+
+model App {
+  id                String        @id @default(cuid())
+  appleId           String        @unique
+  bundleId          String        @unique
+  name              String
+  subtitle          String?
+  currentTitle      String?
+  currentSubtitle   String?
+  type              AppType       @default(NATIVE)
+  category          String?
+  subcategory       String?
+  storeUrl          String?
+  iconUrl           String?
+  status            AppStatus     @default(DRAFT)
+  locale            String        @default("ru")
+  country           String        @default("RU")
+
+  organicDownloads  Int           @default(0)
+  categoryRank      Int?
+  rating            Float?
+  reviewCount       Int           @default(0)
+  lastSyncAt        DateTime?
+
+  accountId         String
+  account           AppleAccount  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  nicheId           String?
+  niche             Niche?        @relation(fields: [nicheId], references: [id])
+
+  tags              String[]      @default([])
+  metadata          Json          @default("{}")
+  notes             String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  keywords          AppKeyword[]
+  titleVariants     TitleVariant[]
+  pushCampaigns     PushCampaign[]
+  positionSnapshots PositionSnapshot[]
+  pessimizations    PessimizationEvent[]
+  competitors       CompetitorRelation[]
+  localizations     AppLocalization[]
+
+  @@map("app")
+  @@index([status])
+  @@index([nicheId])
+  @@index([accountId])
+  @@index([tags], type: Gin)
+  @@index([appleId])
+}
+
+enum AppType {
+  NATIVE
+  WEBVIEW
+  HYBRID
+}
+
+enum AppStatus {
+  DRAFT
+  IN_REVIEW
+  LIVE
+  SUSPENDED
+  REMOVED
+}
+
+// ============================================================
+// NICHES
+// ============================================================
+
+model Niche {
+  id              String   @id @default(cuid())
+  name            String   @unique
+  displayName     String
+  description     String?
+  parentId        String?
+  parent          Niche?   @relation("NicheHierarchy", fields: [parentId], references: [id])
+  children        Niche[]  @relation("NicheHierarchy")
+
+  totalTraffic    Int      @default(0)
+  avgSAP          Float    @default(0)
+  avgCompetition  Float    @default(0)
+  keywordCount    Int      @default(0)
+  appCount        Int      @default(0)
+  estimatedCPC    Float?
+  riskLevel       RiskLevel @default(MEDIUM)
+
+  tags            String[] @default([])
+  metadata        Json     @default("{}")
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  keywords        Keyword[]
+  apps            App[]
+  researchSessions ResearchSession[]
+
+  @@map("niche")
+  @@index([name])
+  @@index([tags], type: Gin)
+  @@index([riskLevel])
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+// ============================================================
+// KEYWORDS
+// ============================================================
+
+model Keyword {
+  id              String   @id @default(cuid())
+  text            String
+  normalizedText  String
+  locale          String   @default("ru")
+  country         String   @default("RU")
+
+  trafficScore    Int?
+  sap             Float?
+  competition     Float?
+  totalApps       Int?
+  difficulty      Float?
+
+  intent          KeywordIntent?
+  commerciality   Float?
+
+  nicheId         String?
+  niche           Niche?   @relation(fields: [nicheId], references: [id])
+
+  tags            String[] @default([])
+  metadata        Json     @default("{}")
+  notes           String?
+  firstSeenAt     DateTime @default(now())
+  lastCheckedAt   DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  metrics         KeywordMetricSnapshot[]
+  appKeywords     AppKeyword[]
+  suggestions     KeywordSuggestion[]   @relation("SourceKeyword")
+  suggestedFrom   KeywordSuggestion[]   @relation("SuggestedKeyword")
+  positionSnapshots PositionSnapshot[]
+  worldwideChecks WorldwideCheck[]
+  researchKeywords ResearchKeyword[]
+
+  @@map("keyword")
+  @@unique([normalizedText, locale, country])
+  @@index([nicheId])
+  @@index([trafficScore(sort: Desc)])
+  @@index([tags], type: Gin)
+  @@index([normalizedText])
+}
+
+enum KeywordIntent {
+  NAVIGATIONAL
+  INFORMATIONAL
+  TRANSACTIONAL
+  MIXED
+}
+
+model KeywordMetricSnapshot {
+  id              String   @id @default(cuid())
+  keywordId       String
+  keyword         Keyword  @relation(fields: [keywordId], references: [id], onDelete: Cascade)
+
+  trafficScore    Int?
+  sap             Float?
+  competition     Float?
+  totalApps       Int?
+
+  source          String   @default("asomobile")
+  capturedAt      DateTime @default(now())
+
+  @@map("keyword_metric_snapshot")
+  @@index([keywordId, capturedAt(sort: Desc)])
+  @@index([capturedAt])
+}
+
+model AppKeyword {
+  id              String   @id @default(cuid())
+  appId           String
+  app             App      @relation(fields: [appId], references: [id], onDelete: Cascade)
+  keywordId       String
+  keyword         Keyword  @relation(fields: [keywordId], references: [id], onDelete: Cascade)
+
+  currentPosition Int?
+  bestPosition    Int?
+  worstPosition   Int?
+  positionTrend   PositionTrend @default(STABLE)
+
+  source          AppKeywordSource @default(MANUAL)
+  isInTitle       Boolean  @default(false)
+  isInSubtitle    Boolean  @default(false)
+
+  tags            String[] @default([])
+  metadata        Json     @default("{}")
+  firstTrackedAt  DateTime @default(now())
+  lastPositionAt  DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("app_keyword")
+  @@unique([appId, keywordId])
+  @@index([appId])
+  @@index([keywordId])
+  @@index([currentPosition])
+}
+
+enum PositionTrend {
+  RISING
+  STABLE
+  FALLING
+  NEW
+  LOST
+}
+
+enum AppKeywordSource {
+  MANUAL
+  ASOMOBILE_SUGGEST
+  AI_RESEARCH
+  COMPETITOR_ANALYSIS
+  TITLE_OPTIMIZATION
+}
+
+model KeywordSuggestion {
+  id              String   @id @default(cuid())
+  sourceKeywordId String
+  sourceKeyword   Keyword  @relation("SourceKeyword", fields: [sourceKeywordId], references: [id], onDelete: Cascade)
+  suggestedKeywordId String
+  suggestedKeyword   Keyword @relation("SuggestedKeyword", fields: [suggestedKeywordId], references: [id], onDelete: Cascade)
+
+  relevanceScore  Float?
+  source          String   @default("asomobile")
+  createdAt       DateTime @default(now())
+
+  @@map("keyword_suggestion")
+  @@unique([sourceKeywordId, suggestedKeywordId])
+  @@index([sourceKeywordId])
+}
+
+model WorldwideCheck {
+  id              String   @id @default(cuid())
+  keywordId       String
+  keyword         Keyword  @relation(fields: [keywordId], references: [id], onDelete: Cascade)
+
+  country         String
+  trafficScore    Int?
+  sap             Float?
+  competition     Float?
+  checkedAt       DateTime @default(now())
+
+  @@map("worldwide_check")
+  @@unique([keywordId, country, checkedAt])
+  @@index([keywordId])
+  @@index([country])
+}
+
+// ============================================================
+// KEYWORD RESEARCH SESSIONS
+// ============================================================
+
+model ResearchSession {
+  id              String              @id @default(cuid())
+  name            String
+  status          ResearchStatus      @default(PENDING)
+  type            ResearchType        @default(KEYWORD_DISCOVERY)
+
+  seedKeywords    String[]
+  targetLocale    String              @default("ru")
+  targetCountry   String              @default("RU")
+  maxKeywords     Int                 @default(500)
+  minTraffic      Int                 @default(5)
+  config          Json                @default("{}")
+
+  foundKeywords   Int                 @default(0)
+  processedSeeds  Int                 @default(0)
+  totalSeeds      Int                 @default(0)
+
+  nicheId         String?
+  niche           Niche?              @relation(fields: [nicheId], references: [id])
+  triggeredBy     String?
+
+  tags            String[]            @default([])
+  metadata        Json                @default("{}")
+  notes           String?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  errorMessage    String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  keywords        ResearchKeyword[]
+
+  @@map("research_session")
+  @@index([status])
+  @@index([nicheId])
+  @@index([tags], type: Gin)
+}
+
+enum ResearchStatus {
+  PENDING
+  RUNNING
+  PAUSED
+  COMPLETED
+  FAILED
+}
+
+enum ResearchType {
+  KEYWORD_DISCOVERY
+  COMPETITOR_ANALYSIS
+  NICHE_EXPANSION
+  WORLDWIDE_CHECK
+}
+
+model ResearchKeyword {
+  id              String          @id @default(cuid())
+  sessionId       String
+  session         ResearchSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  keywordId       String
+  keyword         Keyword         @relation(fields: [keywordId], references: [id], onDelete: Cascade)
+
+  discoveryMethod String
+  depth           Int             @default(0)
+  parentKeywordId String?
+  relevanceScore  Float?
+
+  createdAt       DateTime        @default(now())
+
+  @@map("research_keyword")
+  @@unique([sessionId, keywordId])
+  @@index([sessionId])
+}
+
+// ============================================================
+// COMPETITORS
+// ============================================================
+
+model Competitor {
+  id              String   @id @default(cuid())
+  appleId         String   @unique
+  name            String
+  bundleId        String?
+  publisher       String?
+  category        String?
+  storeUrl        String?
+  iconUrl         String?
+  rating          Float?
+  reviewCount     Int?
+  estimatedDownloads Int?
+
+  tags            String[] @default([])
+  metadata        Json     @default("{}")
+  notes           String?
+  lastSyncAt      DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  relations       CompetitorRelation[]
+
+  @@map("competitor")
+  @@index([appleId])
+  @@index([tags], type: Gin)
+}
+
+model CompetitorRelation {
+  id              String     @id @default(cuid())
+  appId           String
+  app             App        @relation(fields: [appId], references: [id], onDelete: Cascade)
+  competitorId    String
+  competitor      Competitor @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+
+  sharedKeywords  Int        @default(0)
+  overlapScore    Float?
+  threatLevel     RiskLevel  @default(MEDIUM)
+
+  metadata        Json       @default("{}")
+  lastAnalyzedAt  DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@map("competitor_relation")
+  @@unique([appId, competitorId])
+  @@index([appId])
+  @@index([competitorId])
+}
+
+// ============================================================
+// TITLE OPTIMIZATION
+// ============================================================
+
+model TitleVariant {
+  id              String            @id @default(cuid())
+  appId           String
+  app             App               @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  title           String
+  subtitle        String?
+  charCount       Int
+  keywordsCovered String[]
+  keywordCount    Int               @default(0)
+  trafficCovered  Int               @default(0)
+
+  status          TitleStatus       @default(DRAFT)
+  isActive        Boolean           @default(false)
+  generatedBy     String
+  aiPrompt        String?
+  aiReasoning     String?
+
+  score           Float?
+  tags            String[]          @default([])
+  metadata        Json              @default("{}")
+  notes           String?
+  appliedAt       DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@map("title_variant")
+  @@index([appId])
+  @@index([status])
+  @@index([score(sort: Desc)])
+}
+
+enum TitleStatus {
+  DRAFT
+  APPROVED
+  APPLIED
+  REJECTED
+  ARCHIVED
+}
+
+// ============================================================
+// PUSH CAMPAIGNS
+// ============================================================
+
+model PushCampaign {
+  id              String            @id @default(cuid())
+  appId           String
+  app             App               @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  name            String
+  status          CampaignStatus    @default(DRAFT)
+  strategy        PushStrategy      @default(GRADUAL)
+
+  targetKeywords  String[]
+  targetPositions Json
+  targetCountry   String            @default("RU")
+
+  totalBudget     Float             @default(0)
+  spentBudget     Float             @default(0)
+  costPerInstall  Float?
+
+  totalInstalls   Int               @default(0)
+  completedInstalls Int             @default(0)
+  durationDays    Int               @default(14)
+
+  resultSummary   Json?
+  roiEstimate     Float?
+
+  generatedBy     String?
+  aiReasoning     String?
+
+  tags            String[]          @default([])
+  metadata        Json              @default("{}")
+  notes           String?
+  startDate       DateTime?
+  endDate         DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  dailyPlans      PushDailyPlan[]
+  pessimizations  PessimizationEvent[]
+  versions        CampaignVersion[]
+
+  @@map("push_campaign")
+  @@index([appId])
+  @@index([status])
+  @@index([tags], type: Gin)
+  @@index([startDate, endDate])
+}
+
+enum CampaignStatus {
+  DRAFT
+  REVIEW
+  APPROVED
+  ACTIVE
+  PAUSED
+  COMPLETED
+  CANCELLED
+  PESSIMIZED
+}
+
+enum PushStrategy {
+  GRADUAL
+  AGGRESSIVE
+  CONSERVATIVE
+  CUSTOM
+}
+
+model PushDailyPlan {
+  id              String       @id @default(cuid())
+  campaignId      String
+  campaign        PushCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  day             Int
+  date            DateTime
+  plannedInstalls Int          @default(0)
+  actualInstalls  Int          @default(0)
+  cost            Float        @default(0)
+
+  positionsBefore Json?
+  positionsAfter  Json?
+
+  status          DailyPlanStatus @default(PENDING)
+  notes           String?
+  metadata        Json         @default("{}")
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@map("push_daily_plan")
+  @@unique([campaignId, day])
+  @@index([campaignId])
+  @@index([date])
+  @@index([status])
+}
+
+enum DailyPlanStatus {
+  PENDING
+  SENT
+  IN_PROGRESS
+  COMPLETED
+  SKIPPED
+  FAILED
+}
+
+// ============================================================
+// POSITION MONITORING
+// ============================================================
+
+model PositionSnapshot {
+  id              String   @id @default(cuid())
+  appId           String
+  app             App      @relation(fields: [appId], references: [id], onDelete: Cascade)
+  keywordId       String
+  keyword         Keyword  @relation(fields: [keywordId], references: [id], onDelete: Cascade)
+
+  position        Int?
+  previousPosition Int?
+  change          Int?
+  country         String   @default("RU")
+
+  source          String   @default("asomobile")
+  capturedAt      DateTime @default(now())
+
+  @@map("position_snapshot")
+  @@index([appId, keywordId, capturedAt(sort: Desc)])
+  @@index([appId, capturedAt(sort: Desc)])
+  @@index([keywordId, capturedAt(sort: Desc)])
+  @@index([capturedAt])
+}
+
+// ============================================================
+// PESSIMIZATION DETECTION
+// ============================================================
+
+model PessimizationEvent {
+  id              String               @id @default(cuid())
+  appId           String
+  app             App                  @relation(fields: [appId], references: [id], onDelete: Cascade)
+  campaignId      String?
+  campaign        PushCampaign?        @relation(fields: [campaignId], references: [id])
+
+  type            PessimizationType    @default(POSITION_DROP)
+  severity        PessimizationSeverity @default(MODERATE)
+  status          PessimizationStatus  @default(DETECTED)
+
+  affectedKeywords Json
+  avgPositionDrop Float               @default(0)
+  maxPositionDrop Int                 @default(0)
+
+  pushContext     Json?
+  marketContext   Json?
+  appContext      Json?
+
+  aiAnalysis      String?
+  aiRecommendation String?
+  rootCause       String?
+
+  detectedAt      DateTime            @default(now())
+  resolvedAt      DateTime?
+  tags            String[]            @default([])
+  metadata        Json                @default("{}")
+  notes           String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  learningRecords PushLearningRecord[]
+
+  @@map("pessimization_event")
+  @@index([appId])
+  @@index([campaignId])
+  @@index([type])
+  @@index([severity])
+  @@index([detectedAt(sort: Desc)])
+  @@index([tags], type: Gin)
+}
+
+enum PessimizationType {
+  POSITION_DROP
+  COMPLETE_DEINDEX
+  CATEGORY_DROP
+  REVIEW_BOMB
+  ACCOUNT_WARNING
+}
+
+enum PessimizationSeverity {
+  MINOR
+  MODERATE
+  SEVERE
+  CRITICAL
+}
+
+enum PessimizationStatus {
+  DETECTED
+  ANALYZING
+  MITIGATING
+  RESOLVED
+  ACCEPTED
+}
+
+// ============================================================
+// PUSH LEARNING ENGINE
+// ============================================================
+
+model PushLearningRecord {
+  id                String              @id @default(cuid())
+
+  nicheSlug         String
+  appAge            Int
+  organicDownloads  Int
+  categoryRank      Int?
+  keywordDifficulty Float?
+  keywordTraffic    Int?
+  startPosition     Int?
+  pushStrategy      PushStrategy
+  dailyInstalls     Int
+  totalInstalls     Int
+  durationDays      Int
+
+  rampProfile       Json
+  installVelocity   Float
+  maxDailyInstalls  Int
+  rampUpDays        Int
+
+  outcome           PushOutcome         @default(UNKNOWN)
+  finalPosition     Int?
+  positionGain      Int?
+  pessimized        Boolean             @default(false)
+  pessimizationDay  Int?
+  pessimizationId   String?
+  pessimization     PessimizationEvent? @relation(fields: [pessimizationId], references: [id])
+
+  lessonsLearned    String?
+  confidenceScore   Float?
+
+  tags              String[]            @default([])
+  metadata          Json                @default("{}")
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  @@map("push_learning_record")
+  @@index([nicheSlug])
+  @@index([outcome])
+  @@index([pessimized])
+  @@index([tags], type: Gin)
+}
+
+enum PushOutcome {
+  SUCCESS
+  PARTIAL
+  FAILED
+  PESSIMIZED
+  UNKNOWN
+}
+
+// ============================================================
+// AI CHAT SYSTEM
+// ============================================================
+
+model AIChatSession {
+  id              String          @id @default(cuid())
+  userId          String
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title           String?
+  context         Json            @default("{}")
+  systemPrompt    String?
+  model           String          @default("openai/gpt-4o")
+  totalTokens     Int             @default(0)
+  totalCost       Float           @default(0)
+  messageCount    Int             @default(0)
+
+  tags            String[]        @default([])
+  metadata        Json            @default("{}")
+  isArchived      Boolean         @default(false)
+  lastMessageAt   DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  messages        AIChatMessage[]
+
+  @@map("ai_chat_session")
+  @@index([userId])
+  @@index([isArchived])
+  @@index([lastMessageAt(sort: Desc)])
+  @@index([tags], type: Gin)
+}
+
+model AIChatMessage {
+  id              String          @id @default(cuid())
+  sessionId       String
+  session         AIChatSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  role            MessageRole
+  content         String
+  toolCalls       Json?
+  tokenCount      Int             @default(0)
+  cost            Float           @default(0)
+  model           String?
+  latencyMs       Int?
+
+  metadata        Json            @default("{}")
+  createdAt       DateTime        @default(now())
+
+  @@map("ai_chat_message")
+  @@index([sessionId, createdAt])
+}
+
+enum MessageRole {
+  SYSTEM
+  USER
+  ASSISTANT
+  TOOL
+}
+
+// ============================================================
+// AI ACTIONS
+// ============================================================
+
+model AIAction {
+  id              String          @id @default(cuid())
+  userId          String?
+  user            User?           @relation(fields: [userId], references: [id])
+
+  type            AIActionType
+  status          AIActionStatus  @default(PENDING)
+  description     String
+  input           Json
+  output          Json?
+  error           String?
+
+  relatedAppId    String?
+  relatedNicheId  String?
+  relatedCampaignId String?
+  relatedSessionId String?
+
+  durationMs      Int?
+  triggeredBy     String
+  tags            String[]        @default([])
+  metadata        Json            @default("{}")
+  startedAt       DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@map("ai_action")
+  @@index([type])
+  @@index([status])
+  @@index([relatedAppId])
+  @@index([relatedNicheId])
+  @@index([createdAt(sort: Desc)])
+  @@index([tags], type: Gin)
+}
+
+enum AIActionType {
+  KEYWORD_RESEARCH
+  NICHE_ANALYSIS
+  TITLE_GENERATION
+  PUSH_PLAN_GENERATION
+  PUSH_PLAN_ADJUSTMENT
+  COMPETITOR_ANALYSIS
+  PESSIMIZATION_ANALYSIS
+  LEARNING_UPDATE
+  DATA_QUERY
+  REPORT_GENERATION
+}
+
+enum AIActionStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+// ============================================================
+// ASO MOBILE API TASKS
+// ============================================================
+
+model ASOMobileTask {
+  id              String            @id @default(cuid())
+  ticketId        String            @unique
+  endpoint        String
+  method          String
+  params          Json
+  status          ASOMobileTaskStatus @default(PENDING)
+
+  result          Json?
+  errorMessage    String?
+  retryCount      Int               @default(0)
+  maxRetries      Int               @default(5)
+
+  relatedEntityType String?
+  relatedEntityId   String?
+
+  createdAt       DateTime          @default(now())
+  completedAt     DateTime?
+  updatedAt       DateTime          @updatedAt
+
+  @@map("aso_mobile_task")
+  @@index([ticketId])
+  @@index([status])
+  @@index([endpoint])
+  @@index([createdAt(sort: Desc)])
+}
+
+enum ASOMobileTaskStatus {
+  PENDING
+  POLLING
+  COMPLETED
+  FAILED
+  TIMEOUT
+}
+
+// ============================================================
+// AUDIT LOG
+// ============================================================
+
+model AuditLog {
+  id              String   @id @default(cuid())
+  userId          String?
+  user            User?    @relation(fields: [userId], references: [id])
+
+  action          String
+  entityType      String
+  entityId        String
+  before          Json?
+  after           Json?
+  diff            Json?
+
+  ip              String?
+  userAgent       String?
+  source          String   @default("web")
+  createdAt       DateTime @default(now())
+
+  @@map("audit_log")
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt(sort: Desc)])
+}
+
+// ============================================================
+// NOTIFICATIONS
+// ============================================================
+
+model Notification {
+  id              String             @id @default(cuid())
+  userId          String
+  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type            NotificationType
+  severity        NotificationSeverity @default(INFO)
+  title           String
+  body            String
+  actionUrl       String?
+  actionLabel     String?
+
+  entityType      String?
+  entityId        String?
+
+  isRead          Boolean            @default(false)
+  readAt          DateTime?
+  isEmailed       Boolean            @default(false)
+  isTelegramed    Boolean            @default(false)
+
+  metadata        Json               @default("{}")
+  createdAt       DateTime           @default(now())
+
+  @@map("notification")
+  @@index([userId, isRead, createdAt(sort: Desc)])
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([type])
+}
+
+enum NotificationType {
+  PESSIMIZATION_DETECTED
+  PESSIMIZATION_RESOLVED
+  CAMPAIGN_COMPLETED
+  CAMPAIGN_PESSIMIZED
+  RESEARCH_COMPLETED
+  RESEARCH_FAILED
+  POSITION_ALERT
+  DAILY_DIGEST
+  SYSTEM_ALERT
+  PUSH_DAY_READY
+  CRON_JOB_FAILED
+}
+
+enum NotificationSeverity {
+  INFO
+  WARNING
+  ERROR
+  CRITICAL
+}
+
+// ============================================================
+// APP STORE LOCALIZATIONS
+// ============================================================
+
+model AppLocalization {
+  id              String   @id @default(cuid())
+  appId           String
+  app             App      @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  locale          String
+  title           String?
+  subtitle        String?
+  keywordField    String?
+  description     String?
+
+  keywordsCovered String[] @default([])
+  trafficCovered  Int      @default(0)
+
+  generatedBy     String?
+  sourceLocale    String?
+  aiReasoning     String?
+  isApplied       Boolean  @default(false)
+
+  tags            String[] @default([])
+  metadata        Json     @default("{}")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("app_localization")
+  @@unique([appId, locale])
+  @@index([appId])
+  @@index([locale])
+}
+
+// ============================================================
+// CAMPAIGN VERSION HISTORY
+// ============================================================
+
+model CampaignVersion {
+  id              String       @id @default(cuid())
+  campaignId      String
+  campaign        PushCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  version         Int
+  snapshot        Json
+  dailyPlans      Json
+  changeDescription String?
+  changedBy       String
+
+  status          CampaignStatus
+  createdAt       DateTime     @default(now())
+
+  @@map("campaign_version")
+  @@unique([campaignId, version])
+  @@index([campaignId])
+}
+
+// ============================================================
+// TAG TAXONOMY
+// ============================================================
+
+model TagTaxonomy {
+  id              String   @id @default(cuid())
+  tag             String   @unique
+  category        String
+  displayName     String
+  parentTag       String?
+  synonyms        String[] @default([])
+  autoApplyRules  Json     @default("{}")
+  color           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("tag_taxonomy")
+  @@index([category])
+  @@index([tag])
+}
+
+// ============================================================
+// AGGREGATED POSITION DATA
+// ============================================================
+
+model PositionDaily {
+  id              String   @id @default(cuid())
+  appId           String
+  keywordId       String
+  country         String   @default("RU")
+  date            DateTime @db.Date
+
+  minPosition     Int?
+  maxPosition     Int?
+  avgPosition     Float?
+  endPosition     Int?
+  checkCount      Int      @default(0)
+  change          Int?
+
+  createdAt       DateTime @default(now())
+
+  @@map("position_daily")
+  @@unique([appId, keywordId, country, date])
+  @@index([appId, date(sort: Desc)])
+  @@index([keywordId, date(sort: Desc)])
+  @@index([date])
+}
+
+model KeywordMetricDaily {
+  id              String   @id @default(cuid())
+  keywordId       String
+  date            DateTime @db.Date
+
+  avgTrafficScore Float?
+  avgSap          Float?
+  avgCompetition  Float?
+  checkCount      Int      @default(0)
+
+  createdAt       DateTime @default(now())
+
+  @@map("keyword_metric_daily")
+  @@unique([keywordId, date])
+  @@index([keywordId, date(sort: Desc)])
+  @@index([date])
+}
+
+// ============================================================
+// CRON JOB LOG
+// ============================================================
+
+model CronJobLog {
+  id              String        @id @default(cuid())
+  jobName         String
+  status          CronJobStatus @default(RUNNING)
+  startedAt       DateTime      @default(now())
+  completedAt     DateTime?
+  durationMs      Int?
+  error           String?
+  retryCount      Int           @default(0)
+  itemsProcessed  Int?
+  metadata        Json          @default("{}")
+
+  @@map("cron_job_log")
+  @@index([jobName, startedAt(sort: Desc)])
+  @@index([status])
+  @@index([startedAt(sort: Desc)])
+}
+
+enum CronJobStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+  RETRYING
+}
+
+// ============================================================
+// SYSTEM SETTINGS
+// ============================================================
+
+model SystemSettings {
+  id              String   @id @default(cuid())
+  key             String   @unique
+  value           Json
+  type            SettingType
+  category        String
+  label           String
+  description     String?
+  options         Json?
+  isSecret        Boolean  @default(false)
+  updatedBy       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("system_settings")
+  @@index([category])
+  @@index([key])
+}
+
+enum SettingType {
+  STRING
+  NUMBER
+  BOOLEAN
+  SELECT
+  SECRET
+  JSON
+}
+
+// ============================================================
+// API RESPONSE LOG
+// ============================================================
+
+model APIResponseLog {
+  id              String   @id @default(cuid())
+  endpoint        String
+  method          String   @default("GET")
+  params          Json
+  response        Json
+  statusCode      Int?
+  durationMs      Int?
+  source          String   @default("asomobile")
+
+  relatedEntityType String?
+  relatedEntityId   String?
+
+  createdAt       DateTime @default(now())
+
+  @@map("api_response_log")
+  @@index([endpoint, createdAt(sort: Desc)])
+  @@index([relatedEntityType, relatedEntityId])
+  @@index([createdAt])
+}
+
+// ============================================================
+// ASYNC JOB
+// ============================================================
+
+model AsyncJob {
+  id              String         @id @default(cuid())
+  type            AsyncJobType
+  status          AsyncJobStatus @default(PENDING)
+
+  input           Json
+  output          Json?
+  error           String?
+  progress        Int            @default(0)
+
+  triggeredBy     String
+  relatedEntityType String?
+  relatedEntityId   String?
+
+  startedAt       DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@map("async_job")
+  @@index([type, status])
+  @@index([status])
+  @@index([createdAt(sort: Desc)])
+}
+
+enum AsyncJobType {
+  GENERATE_PUSH_PLAN
+  NICHE_CLUSTER
+  GENERATE_TITLES
+  PESSIMIZATION_ANALYSIS
+  BULK_KEYWORD_CHECK
+}
+
+enum AsyncJobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+// ============================================================
+// GOOGLE TRENDS INTEGRATION
+// ============================================================
+
+model TrendSnapshot {
+  id              String   @id @default(cuid())
+  query           String
+  category        String
+  geo             String   @default("")
+  timeRange       String   @default("today 3-m")
+
+  interestCurrent Int
+  interestPrev    Int?
+  changePercent   Float?
+  isBreakout      Boolean  @default(false)
+  peakInterest    Int?
+
+  relatedQueries  Json     @default("[]")
+  relatedTopics   Json     @default("[]")
+
+  source          String   @default("google-trends")
+  capturedAt      DateTime @default(now())
+  createdAt       DateTime @default(now())
+
+  @@map("trend_snapshot")
+  @@unique([query, geo, capturedAt])
+  @@index([query])
+  @@index([category])
+  @@index([geo])
+  @@index([isBreakout])
+  @@index([capturedAt(sort: Desc)])
+  @@index([changePercent(sort: Desc)])
+}
+
+model TrendOpportunity {
+  id              String               @id @default(cuid())
+  status          TrendOpportunityStatus @default(NEW)
+
+  trendQuery      String
+  trendCategory   String
+  geo             String               @default("")
+  interestScore   Int
+  changePercent   Float
+  isBreakout      Boolean              @default(false)
+
+  suggestedNiche  String?
+  suggestedKeywords Json               @default("[]")
+  appStoreGap     Float?
+  estimatedTraffic Int?
+  competitionLevel String?
+
+  aiAnalysis      String?
+  aiRecommendation String?
+  confidenceScore Float?
+
+  matchedNicheId  String?
+  matchedKeywordIds String[]           @default([])
+
+  tags            String[]             @default([])
+  metadata        Json                 @default("{}")
+  notes           String?
+  analyzedAt      DateTime?
+  expiresAt       DateTime?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  @@map("trend_opportunity")
+  @@index([status])
+  @@index([trendCategory])
+  @@index([appStoreGap(sort: Desc)])
+  @@index([changePercent(sort: Desc)])
+  @@index([createdAt(sort: Desc)])
+  @@index([tags], type: Gin)
+}
+
+enum TrendOpportunityStatus {
+  NEW
+  REVIEWING
+  ACTIONABLE
+  ACTED_ON
+  DISMISSED
+  EXPIRED
+}
