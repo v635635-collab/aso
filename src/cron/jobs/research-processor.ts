@@ -15,7 +15,7 @@ async function pollSuggest(ticketId: string): Promise<KeywordSuggestResult | nul
       ticketId,
       QueuePriority.LOW,
     );
-    if (res.status === 'done' && res.result) return res.result;
+    if (res.status === 'done' && res.data) return res.data;
     if (res.status === 'error') return null;
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
   }
@@ -56,18 +56,20 @@ export async function researchProcessorJob(): Promise<void> {
             const ticket = await sendRequest(
               'keyword-suggest',
               {
-                query: seed,
+                keywords: [seed],
                 country: session.targetCountry,
-                lang: session.targetLocale,
+                platform: 'IOS',
+                ios_device: 'IPHONE',
               },
               QueuePriority.NORMAL,
             );
 
             const result = await pollSuggest(ticket.ticket_id);
-            if (!result?.keywords) continue;
+            const suggestions = result?.[0]?.suggestions ?? [];
+            if (suggestions.length === 0) continue;
 
-            const filtered = result.keywords.filter(
-              (kw) => kw.traffic_score >= session.minTraffic,
+            const filtered = suggestions.filter(
+              (s) => s.traffic.value >= session.minTraffic,
             );
 
             for (const discovered of filtered) {
@@ -76,25 +78,21 @@ export async function researchProcessorJob(): Promise<void> {
               const keyword = await prisma.keyword.upsert({
                 where: {
                   normalizedText_locale_country: {
-                    normalizedText: discovered.keyword.toLowerCase().trim(),
+                    normalizedText: discovered.suggestKeyword.toLowerCase().trim(),
                     locale: session.targetLocale,
                     country: session.targetCountry,
                   },
                 },
                 create: {
-                  text: discovered.keyword,
-                  normalizedText: discovered.keyword.toLowerCase().trim(),
+                  text: discovered.suggestKeyword,
+                  normalizedText: discovered.suggestKeyword.toLowerCase().trim(),
                   locale: session.targetLocale,
                   country: session.targetCountry,
-                  trafficScore: discovered.traffic_score,
-                  sap: discovered.sap,
-                  competition: discovered.competition,
+                  trafficScore: discovered.traffic.value,
                   nicheId: session.nicheId,
                 },
                 update: {
-                  trafficScore: discovered.traffic_score,
-                  sap: discovered.sap,
-                  competition: discovered.competition,
+                  trafficScore: discovered.traffic.value,
                   lastCheckedAt: new Date(),
                 },
               });

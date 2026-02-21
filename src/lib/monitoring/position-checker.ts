@@ -10,7 +10,7 @@ const MAX_POLL_ATTEMPTS = 20;
 async function pollForResult(ticketId: string): Promise<KeywordRankResult | null> {
   for (let i = 0; i < MAX_POLL_ATTEMPTS; i++) {
     const res = await getResult<KeywordRankResult>('keyword-rank', ticketId, QueuePriority.LOW);
-    if (res.status === 'done' && res.result) return res.result as unknown as KeywordRankResult;
+    if (res.status === 'done' && res.data) return res.data as unknown as KeywordRankResult;
     if (res.status === 'error') return null;
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
   }
@@ -33,7 +33,7 @@ export async function checkPositions(): Promise<{ checked: number; updated: numb
     try {
       const ticket = await sendRequest(
         'keyword-rank',
-        { query: ak.keyword.text, app_id: ak.app.appleId, country: ak.keyword.country },
+        { keyword: ak.keyword.text, app_id: ak.app.appleId, country: ak.keyword.country, platform: 'IOS', ios_device: 'IPHONE' },
         QueuePriority.NORMAL,
       );
 
@@ -109,7 +109,7 @@ export async function checkPositionManual(
   for (const ak of appKeywords) {
     const ticket = await sendRequest(
       'keyword-rank',
-      { query: ak.keyword.text, app_id: app.appleId, country: ak.keyword.country },
+      { keyword: ak.keyword.text, app_id: app.appleId, country: ak.keyword.country, platform: 'IOS', ios_device: 'IPHONE' },
       QueuePriority.HIGH,
     );
 

@@ -11,72 +11,93 @@ export enum CircuitState {
 }
 
 // ---------------------------------------------------------------------------
-// Request params
+// Request params – matching real ASOMobile API
 // ---------------------------------------------------------------------------
 
 export interface KeywordCheckParams {
-  query: string;
+  keyword: string;
   country: string;
-  lang: string;
+  platform: 'IOS' | 'ANDROID';
+  ios_device?: 'IPHONE' | 'IPAD';
 }
 
 export interface KeywordSuggestParams {
-  query: string;
+  keywords: string[];
   country: string;
-  lang: string;
+  platform: 'IOS' | 'ANDROID';
+  ios_device?: 'IPHONE' | 'IPAD';
 }
 
 export interface KeywordRankParams {
-  query: string;
+  keyword: string;
   app_id: string;
   country: string;
+  platform: 'IOS' | 'ANDROID';
+  ios_device?: 'IPHONE' | 'IPAD';
 }
 
 export interface AppProfileParams {
   app_id: string;
   country: string;
+  platform: 'IOS' | 'ANDROID';
 }
 
 export interface AppKeywordsParams {
   app_id: string;
   country: string;
+  platform: 'IOS' | 'ANDROID';
 }
 
 export interface WorldwideCheckParams {
-  query: string;
+  keywords: string[];
+  platform: 'IOS' | 'ANDROID';
 }
 
 // ---------------------------------------------------------------------------
-// Response types
+// Response types – matching real ASOMobile API
 // ---------------------------------------------------------------------------
+
+export interface ASOMobileAPIResponse<T = unknown> {
+  code: number;
+  data: T;
+  message?: string;
+}
 
 export interface ASOMobileTicketResponse {
-  ticket_id: string;
-  status: string;
+  ticket_id: number;
 }
 
+export type ASOMobileResultStatus = 'done' | 'pending' | 'error';
+
 export interface ASOMobileResultResponse<T = unknown> {
-  status: 'pending' | 'done' | 'error';
-  result?: T;
+  status: ASOMobileResultStatus;
+  data?: T;
   error?: string;
 }
 
+// ---------------------------------------------------------------------------
+// Result data types – matching real ASOMobile API
+// ---------------------------------------------------------------------------
+
 export interface KeywordCheckResult {
-  keyword: string;
-  traffic_score: number;
-  sap: number;
-  competition: number;
-  total_apps: number;
+  ci: { value: number };
+  apps_count: number;
+  suggestions: string[];
+  kei: { value: number };
+  asa: number;
+  traffic: { value: number };
+  top_apps: Array<{ type: string; app_id: string }>;
 }
 
-export interface KeywordSuggestResult {
-  keywords: Array<{
-    keyword: string;
-    traffic_score: number;
-    sap: number;
-    competition: number;
+export interface KeywordSuggestResultItem {
+  suggestions: Array<{
+    suggestKeyword: string;
+    traffic: { value: number };
   }>;
+  keyword: string;
 }
+
+export type KeywordSuggestResult = KeywordSuggestResultItem[];
 
 export interface KeywordRankResult {
   app_id: string;

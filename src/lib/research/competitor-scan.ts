@@ -1,5 +1,6 @@
 import { sendRequest, getResult } from '@/lib/asomobile/client';
 import type {
+  AppKeywordsParams,
   AppKeywordsResult,
   KeywordCheckResult,
 } from '@/lib/asomobile/types';
@@ -16,7 +17,7 @@ async function pollResult<T>(
 ): Promise<T | null> {
   for (let i = 0; i < MAX_POLL_ATTEMPTS; i++) {
     const result = await getResult<T>(endpoint, ticketId);
-    if (result.status === 'done' && result.result) return result.result;
+    if (result.status === 'done' && result.data) return result.data;
     if (result.status === 'error') return null;
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
   }
@@ -27,14 +28,15 @@ export async function scanCompetitorKeywords(
   appId: string,
   country: string,
 ): Promise<Keyword[]> {
-  const ticket = await sendRequest('app-keywords', { app_id: appId, country });
+  const params = { app_id: appId, country, platform: 'IOS' as const };
+  const ticket = await sendRequest('app-keywords', params);
 
   await prisma.aSOMobileTask.create({
     data: {
       ticketId: ticket.ticket_id,
       endpoint: 'app-keywords',
       method: 'POST',
-      params: { app_id: appId, country },
+      params,
       status: 'POLLING',
       relatedEntityType: 'competitor',
       relatedEntityId: appId,

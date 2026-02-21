@@ -3,12 +3,12 @@ import prisma from '@/lib/prisma';
 import { apiSuccess, apiError } from '@/lib/utils';
 import { getCurrentUser } from '@/lib/auth';
 import { sendRequest } from '@/lib/asomobile/client';
+import type { KeywordCheckParams } from '@/lib/asomobile/types';
 import { z } from 'zod';
 
 const checkSchema = z.object({
-  query: z.string().min(1),
+  keyword: z.string().min(1),
   country: z.string().default('RU'),
-  lang: z.string().default('ru'),
 });
 
 export async function POST(request: NextRequest) {
@@ -17,16 +17,17 @@ export async function POST(request: NextRequest) {
     if (!user) return apiError('UNAUTHORIZED', 'Unauthorized', 401);
 
     const body = await request.json();
-    const { query, country, lang } = checkSchema.parse(body);
+    const { keyword, country } = checkSchema.parse(body);
 
-    const ticket = await sendRequest('keyword-check', { query, country, lang });
+    const params = { keyword, country, platform: 'IOS' as const, ios_device: 'IPHONE' as const };
+    const ticket = await sendRequest('keyword-check', params);
 
     const task = await prisma.aSOMobileTask.create({
       data: {
         ticketId: ticket.ticket_id,
         endpoint: 'keyword-check',
         method: 'POST',
-        params: { query, country, lang },
+        params,
         status: 'POLLING',
         relatedEntityType: 'keyword',
       },

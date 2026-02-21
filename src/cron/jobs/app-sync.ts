@@ -10,7 +10,7 @@ const MAX_POLL_ATTEMPTS = 20;
 async function pollAppProfile(ticketId: string): Promise<AppProfileResult | null> {
   for (let i = 0; i < MAX_POLL_ATTEMPTS; i++) {
     const res = await getResult<AppProfileResult>('app-profile', ticketId, QueuePriority.LOW);
-    if (res.status === 'done' && res.result) return res.result;
+    if (res.status === 'done' && res.data) return res.data;
     if (res.status === 'error') return null;
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
   }
@@ -30,7 +30,7 @@ export async function appSyncJob(): Promise<void> {
       try {
         const ticket = await sendRequest(
           'app-profile',
-          { app_id: app.appleId, country: app.country },
+          { app_id: app.appleId, country: app.country, platform: 'IOS' },
           QueuePriority.NORMAL,
         );
 

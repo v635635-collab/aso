@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, AppWindow, KeyRound, Layers, Search,
   Rocket, LineChart, AlertTriangle, Brain, TrendingUp,
-  Settings, Activity, Users
+  Settings, Activity, Users, BookOpen, Type
 } from 'lucide-react';
 
 export interface NavItem {
@@ -39,6 +39,12 @@ export const navigation: NavSection[] = [
     ],
   },
   {
+    title: 'Optimization',
+    items: [
+      { title: 'Titles', href: '/titles', icon: Type },
+    ],
+  },
+  {
     title: 'Push',
     items: [
       { title: 'Campaigns', href: '/campaigns', icon: Rocket },
@@ -58,6 +64,7 @@ export const navigation: NavSection[] = [
     items: [
       { title: 'Analytics', href: '/analytics', icon: Activity },
       { title: 'Settings', href: '/settings', icon: Settings },
+      { title: 'Documentation', href: '/docs', icon: BookOpen },
     ],
   },
 ];

@@ -22,7 +22,7 @@ export async function pollPendingTasks(): Promise<{ processed: number }> {
           where: { id: task.id },
           data: {
             status: 'COMPLETED',
-            result: response.result ?? undefined,
+            result: response.data ?? undefined,
             completedAt: new Date(),
           },
         });

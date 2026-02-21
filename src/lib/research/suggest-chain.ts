@@ -1,5 +1,5 @@
 import { sendRequest, getResult } from '@/lib/asomobile/client';
-import type { KeywordSuggestResult } from '@/lib/asomobile/types';
+import type { KeywordSuggestParams, KeywordSuggestResult } from '@/lib/asomobile/types';
 import prisma from '@/lib/prisma';
 
 export interface SuggestChainResult {
@@ -10,13 +10,18 @@ export interface SuggestChainResult {
   depth: number;
 }
 
+interface NormalizedSuggestion {
+  keyword: string;
+  traffic_score: number;
+}
+
 const MAX_POLL_ATTEMPTS = 20;
 const POLL_INTERVAL_MS = 3_000;
 
 async function pollResult<T>(endpoint: 'keyword-suggest', ticketId: string): Promise<T | null> {
   for (let i = 0; i < MAX_POLL_ATTEMPTS; i++) {
     const result = await getResult<T>(endpoint, ticketId);
-    if (result.status === 'done' && result.result) return result.result;
+    if (result.status === 'done' && result.data) return result.data;
     if (result.status === 'error') return null;
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
   }
@@ -26,17 +31,18 @@ async function pollResult<T>(endpoint: 'keyword-suggest', ticketId: string): Pro
 async function fetchSuggestions(
   keyword: string,
   country: string,
-  locale: string,
-): Promise<KeywordSuggestResult['keywords']> {
+  _locale: string,
+): Promise<NormalizedSuggestion[]> {
   try {
-    const ticket = await sendRequest('keyword-suggest', { query: keyword, country, lang: locale });
+    const params = { keywords: [keyword], country, platform: 'IOS' as const, ios_device: 'IPHONE' as const };
+    const ticket = await sendRequest('keyword-suggest', params);
 
     await prisma.aSOMobileTask.create({
       data: {
         ticketId: ticket.ticket_id,
         endpoint: 'keyword-suggest',
         method: 'POST',
-        params: { query: keyword, country, lang: locale },
+        params,
         status: 'POLLING',
         relatedEntityType: 'keyword',
       },
@@ -53,7 +59,11 @@ async function fetchSuggestions(
       },
     });
 
-    return result?.keywords ?? [];
+    const suggestions = result?.[0]?.suggestions ?? [];
+    return suggestions.map((s) => ({
+      keyword: s.suggestKeyword,
+      traffic_score: s.traffic.value,
+    }));
   } catch {
     return [];
   }
@@ -84,8 +94,8 @@ export async function expandKeyword(
     results.push({
       keyword: s.keyword,
       trafficScore: s.traffic_score,
-      sap: s.sap,
-      competition: s.competition,
+      sap: 0,
+      competition: 0,
       depth,
     });
   }

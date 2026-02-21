@@ -10,7 +10,7 @@ const MAX_POLL_ATTEMPTS = 20;
 async function pollKeywordCheck(ticketId: string): Promise<KeywordCheckResult | null> {
   for (let i = 0; i < MAX_POLL_ATTEMPTS; i++) {
     const res = await getResult<KeywordCheckResult>('keyword-check', ticketId, QueuePriority.LOW);
-    if (res.status === 'done' && res.result) return res.result;
+    if (res.status === 'done' && res.data) return res.data;
     if (res.status === 'error') return null;
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
   }
@@ -34,7 +34,7 @@ export async function keywordMetricsRefreshJob(): Promise<void> {
       try {
         const ticket = await sendRequest(
           'keyword-check',
-          { query: kw.text, country: kw.country, lang: kw.locale },
+          { keyword: kw.text, country: kw.country, platform: 'IOS', ios_device: 'IPHONE' },
           QueuePriority.NORMAL,
         );
 
@@ -44,10 +44,10 @@ export async function keywordMetricsRefreshJob(): Promise<void> {
         await prisma.keywordMetricSnapshot.create({
           data: {
             keywordId: kw.id,
-            trafficScore: result.traffic_score,
-            sap: result.sap,
-            competition: result.competition,
-            totalApps: result.total_apps,
+            trafficScore: result.traffic.value,
+            sap: result.ci.value,
+            competition: result.apps_count,
+            totalApps: result.apps_count,
             source: 'asomobile',
           },
         });
@@ -55,10 +55,10 @@ export async function keywordMetricsRefreshJob(): Promise<void> {
         await prisma.keyword.update({
           where: { id: kw.id },
           data: {
-            trafficScore: result.traffic_score,
-            sap: result.sap,
-            competition: result.competition,
-            totalApps: result.total_apps,
+            trafficScore: result.traffic.value,
+            sap: result.ci.value,
+            competition: result.apps_count,
+            totalApps: result.apps_count,
             lastCheckedAt: new Date(),
           },
         });

@@ -3,12 +3,12 @@ import prisma from '@/lib/prisma';
 import { apiSuccess, apiError } from '@/lib/utils';
 import { getCurrentUser } from '@/lib/auth';
 import { sendRequest } from '@/lib/asomobile/client';
+import type { KeywordCheckParams } from '@/lib/asomobile/types';
 import { z } from 'zod';
 
 const bulkCheckSchema = z.object({
   keywords: z.array(z.string().min(1)).min(1).max(50),
   country: z.string().default('RU'),
-  lang: z.string().default('ru'),
 });
 
 export async function POST(request: NextRequest) {
@@ -17,13 +17,13 @@ export async function POST(request: NextRequest) {
     if (!user) return apiError('UNAUTHORIZED', 'Unauthorized', 401);
 
     const body = await request.json();
-    const { keywords, country, lang } = bulkCheckSchema.parse(body);
+    const { keywords, country } = bulkCheckSchema.parse(body);
 
     const job = await prisma.asyncJob.create({
       data: {
         type: 'BULK_KEYWORD_CHECK',
         triggeredBy: user.id,
-        input: { keywords, country, lang },
+        input: { keywords, country },
         status: 'RUNNING',
         startedAt: new Date(),
         progress: 0,
@@ -31,23 +31,24 @@ export async function POST(request: NextRequest) {
     });
 
     const tasks = [];
-    for (const query of keywords) {
+    for (const kw of keywords) {
       try {
-        const ticket = await sendRequest('keyword-check', { query, country, lang });
+        const params = { keyword: kw, country, platform: 'IOS' as const, ios_device: 'IPHONE' as const };
+        const ticket = await sendRequest('keyword-check', params);
         const task = await prisma.aSOMobileTask.create({
           data: {
             ticketId: ticket.ticket_id,
             endpoint: 'keyword-check',
             method: 'POST',
-            params: { query, country, lang },
+            params,
             status: 'POLLING',
             relatedEntityType: 'async_job',
             relatedEntityId: job.id,
           },
         });
-        tasks.push({ keyword: query, taskId: task.id, ticketId: ticket.ticket_id });
+        tasks.push({ keyword: kw, taskId: task.id, ticketId: ticket.ticket_id });
       } catch {
-        tasks.push({ keyword: query, taskId: null, error: 'Failed to submit' });
+        tasks.push({ keyword: kw, taskId: null, error: 'Failed to submit' });
       }
     }
 
